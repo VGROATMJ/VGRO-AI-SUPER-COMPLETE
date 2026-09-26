@@ -1,1 +1,222 @@
-<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login / Daftar — VGRO AI</title><link rel="stylesheet" href="css/auth.css"></head><body><div class="bg"></div><main class="auth-page"><a class="brand" href="index.html"><span class="mark">V</span> VGRO<span>AI</span></a><section class="auth-card"><div class="auth-copy"><div class="eyebrow">VGRO AI WORKSPACE</div><h1 id="title">Welcome back.</h1><p id="subtitle">Sign in to continue to your AI workspace.</p><div class="feature-points"><span>✦ Personal AI workspace</span><span>✦ Chat history & preferences</span><span>✦ Local-ready AI infrastructure</span></div></div><div class="auth-form"><div class="tabs"><button class="active" data-mode="login">Log in</button><button data-mode="register">Create account</button></div><form id="form"><label id="nameWrap" class="hidden">Name<input id="name" type="text" autocomplete="name" placeholder="Your name"></label><label>Email<input id="email" type="email" autocomplete="email" placeholder="you@example.com" required></label><label>Password<input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required minlength="6"></label><div class="row"><label class="check"><input type="checkbox" id="remember" checked> Remember me</label><a href="#" id="forgot">Forgot password?</a></div><button class="submit" type="submit" id="submit">Log in <span>→</span></button><p class="terms">By continuing, you agree to use VGRO responsibly.</p><p class="error" id="error"></p></form></div></section><a class="back" href="index.html">← Back to VGRO landing</a></main><script src="js/auth.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Login / Daftar — VGRO AI</title>
+
+    <link
+        rel="stylesheet"
+        href="css/auth.css"
+    >
+</head>
+
+<body>
+
+    <div class="bg"></div>
+
+    <main class="auth-page">
+
+        <!-- BRAND -->
+        <a
+            class="brand"
+            href="index.html"
+        >
+            <span class="mark">V</span>
+            VGRO<span>AI</span>
+        </a>
+
+
+        <!-- AUTH CARD -->
+        <section class="auth-card">
+
+            <!-- LEFT SIDE -->
+            <div class="auth-copy">
+
+                <div class="eyebrow">
+                    VGRO AI WORKSPACE
+                </div>
+
+                <h1 id="title">
+                    Welcome back.
+                </h1>
+
+                <p id="subtitle">
+                    Sign in to continue to your AI workspace.
+                </p>
+
+                <div class="feature-points">
+
+                    <span>
+                        ✦ Personal AI workspace
+                    </span>
+
+                    <span>
+                        ✦ Chat history & preferences
+                    </span>
+
+                    <span>
+                        ✦ Local-ready AI infrastructure
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <!-- RIGHT SIDE -->
+            <div class="auth-form">
+
+                <!-- LOGIN / REGISTER TABS -->
+                <div class="tabs">
+
+                    <button
+                        type="button"
+                        class="active"
+                        data-mode="login"
+                    >
+                        Log in
+                    </button>
+
+                    <button
+                        type="button"
+                        data-mode="register"
+                    >
+                        Create account
+                    </button>
+
+                </div>
+
+
+                <!-- FORM -->
+                <form id="form">
+
+                    <!-- NAME -->
+                    <label
+                        id="nameWrap"
+                        class="hidden"
+                    >
+                        Name
+
+                        <input
+                            id="name"
+                            name="name"
+                            type="text"
+                            autocomplete="name"
+                            placeholder="Your name"
+                        >
+                    </label>
+
+
+                    <!-- EMAIL -->
+                    <label>
+                        Email
+
+                        <input
+                            id="email"
+                            name="email"
+                            type="email"
+                            autocomplete="email"
+                            placeholder="you@example.com"
+                            required
+                        >
+                    </label>
+
+
+                    <!-- PASSWORD -->
+                    <label>
+                        Password
+
+                        <input
+                            id="password"
+                            name="password"
+                            type="password"
+                            autocomplete="current-password"
+                            placeholder="••••••••"
+                            minlength="6"
+                            required
+                        >
+                    </label>
+
+
+                    <!-- REMEMBER / FORGOT -->
+                    <div class="row">
+
+                        <label class="check">
+
+                            <input
+                                type="checkbox"
+                                id="remember"
+                                checked
+                            >
+
+                            <span>
+                                Remember me
+                            </span>
+
+                        </label>
+
+
+                        <a
+                            href="#"
+                            id="forgot"
+                        >
+                            Forgot password?
+                        </a>
+
+                    </div>
+
+
+                    <!-- SUBMIT -->
+                    <button
+                        class="submit"
+                        type="submit"
+                        id="submit"
+                    >
+                        Log in
+                        <span>→</span>
+                    </button>
+
+
+                    <!-- TERMS -->
+                    <p class="terms">
+                        By continuing, you agree to use VGRO responsibly.
+                    </p>
+
+
+                    <!-- MESSAGE -->
+                    <p
+                        class="message"
+                        id="error"
+                    ></p>
+
+                </form>
+
+            </div>
+
+        </section>
+
+
+        <!-- BACK TO LANDING -->
+        <a
+            class="back"
+            href="index.html"
+        >
+            ← Back to VGRO landing
+        </a>
+
+    </main>
+
+
+    <!-- AUTH JAVASCRIPT -->
+    <script src="js/auth.js"></script>
+
+</body>
+
+</html>
