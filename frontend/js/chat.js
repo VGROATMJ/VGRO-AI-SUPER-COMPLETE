@@ -1,222 +1,1202 @@
-<!DOCTYPE html>
-<html lang="id">
+"use strict";
 
-<head>
-    <meta charset="UTF-8">
+// ============================================================
+// VGRO STORAGE
+// ============================================================
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+const VGRO_STORAGE_KEYS = {
+    chats: "vgro:chats",
+    activeChat: "vgro:activeChat",
+    theme: "vgro:theme",
+    temperature: "vgro:temperature"
+};
 
-    <title>Login / Daftar — VGRO AI</title>
+// ============================================================
+// BACKEND VGRO AI
+// ============================================================
 
-    <link
-        rel="stylesheet"
-        href="css/auth.css"
-    >
-</head>
+const VGRO_BACKEND_URL =
+    "https://vgro-ai-super-complete-g7xg.vercel.app";
 
-<body>
+// ============================================================
+// CHAT STATE
+// ============================================================
 
-    <div class="bg"></div>
+let state = {
+    chats: {},
+    activeChatId: null
+};
 
-    <main class="auth-page">
+let isSending = false;
 
-        <!-- BRAND -->
-        <a
-            class="brand"
-            href="index.html"
-        >
-            <span class="mark">V</span>
-            VGRO<span>AI</span>
-        </a>
+// ============================================================
+// INITIALIZATION
+// ============================================================
 
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("[VGRO CHAT] Chat JS berhasil dimuat.");
 
-        <!-- AUTH CARD -->
-        <section class="auth-card">
+    // Jalankan sistem bahasa jika tersedia
+    if (
+        typeof VGRO_I18N !== "undefined" &&
+        typeof VGRO_I18N.applyToDocument === "function"
+    ) {
+        VGRO_I18N.applyToDocument();
+    }
 
-            <!-- LEFT SIDE -->
-            <div class="auth-copy">
+    loadTheme();
+    loadChats();
+    bindEvents();
+    renderSidebarHistory();
+    renderActiveChat();
 
-                <div class="eyebrow">
-                    VGRO AI WORKSPACE
-                </div>
+    document.addEventListener("vgro:languagechange", () => {
+        renderSidebarHistory();
+        renderActiveChat();
+    });
+});
 
-                <h1 id="title">
-                    Welcome back.
-                </h1>
+// ============================================================
+// SEND MESSAGE TO BACKEND
+// ============================================================
 
-                <p id="subtitle">
-                    Sign in to continue to your AI workspace.
-                </p>
+async function sendMessage(message, history) {
+    try {
+        const previousHistory =
+            Array.isArray(history)
+                ? history.slice(0, -1)
+                : [];
 
-                <div class="feature-points">
+        let language = "auto";
 
-                    <span>
-                        ✦ Personal AI workspace
-                    </span>
+        if (
+            typeof VGRO_I18N !== "undefined" &&
+            typeof VGRO_I18N.getActiveLang === "function"
+        ) {
+            language = VGRO_I18N.getActiveLang();
+        }
 
-                    <span>
-                        ✦ Chat history & preferences
-                    </span>
+        console.log("[VGRO] Mengirim pesan ke backend...");
 
-                    <span>
-                        ✦ Local-ready AI infrastructure
-                    </span>
+        const response = await fetch(
+            `${VGRO_BACKEND_URL}/api/chat`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: message,
+                    history: previousHistory,
+                    language: language
+                })
+            }
+        );
 
-                </div>
+        if (!response.ok) {
+            throw new Error(
+                `Backend error: ${response.status}`
+            );
+        }
 
-            </div>
+        const data = await response.json();
 
+        console.log("[VGRO] Response backend:", data);
 
-            <!-- RIGHT SIDE -->
-            <div class="auth-form">
+        if (!data.reply) {
+            throw new Error(
+                "Backend tidak memberikan jawaban."
+            );
+        }
 
-                <!-- LOGIN / REGISTER TABS -->
-                <div class="tabs">
+        return data.reply;
 
-                    <button
-                        type="button"
-                        class="active"
-                        data-mode="login"
-                    >
-                        Log in
-                    </button>
+    } catch (error) {
+        console.error(
+            "[VGRO BACKEND ERROR]",
+            error
+        );
 
-                    <button
-                        type="button"
-                        data-mode="register"
-                    >
-                        Create account
-                    </button>
+        throw error;
+    }
+}
 
-                </div>
+// ============================================================
+// CONNECTION ERROR
+// ============================================================
 
+function getConnectionErrorMessage() {
+    let language = "id";
 
-                <!-- FORM -->
-                <form id="form">
+    if (
+        typeof VGRO_I18N !== "undefined" &&
+        typeof VGRO_I18N.getActiveLang === "function"
+    ) {
+        language = VGRO_I18N.getActiveLang();
+    }
 
-                    <!-- NAME -->
-                    <label
-                        id="nameWrap"
-                        class="hidden"
-                    >
-                        Name
+    if (language === "id") {
+        return "Maaf, VGRO sedang mengalami masalah saat menghubungkan ke server.";
+    }
 
-                        <input
-                            id="name"
-                            name="name"
-                            type="text"
-                            autocomplete="name"
-                            placeholder="Your name"
-                        >
-                    </label>
+    return "Sorry, VGRO is having trouble connecting to the server.";
+}
 
+// ============================================================
+// CHAT STORAGE
+// ============================================================
 
-                    <!-- EMAIL -->
-                    <label>
-                        Email
+function loadChats() {
+    try {
+        const saved = JSON.parse(
+            localStorage.getItem(
+                VGRO_STORAGE_KEYS.chats
+            ) || "{}"
+        );
 
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autocomplete="email"
-                            placeholder="you@example.com"
-                            required
-                        >
-                    </label>
+        state.chats =
+            saved && typeof saved === "object"
+                ? saved
+                : {};
 
+    } catch (error) {
+        console.error(
+            "[VGRO CHAT] Gagal membaca chat:",
+            error
+        );
 
-                    <!-- PASSWORD -->
-                    <label>
-                        Password
+        state.chats = {};
+    }
 
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            autocomplete="current-password"
-                            placeholder="••••••••"
-                            minlength="6"
-                            required
-                        >
-                    </label>
+    state.activeChatId =
+        localStorage.getItem(
+            VGRO_STORAGE_KEYS.activeChat
+        );
 
+    if (
+        !state.activeChatId ||
+        !state.chats[state.activeChatId]
+    ) {
+        createNewChat(false);
+    }
+}
 
-                    <!-- REMEMBER / FORGOT -->
-                    <div class="row">
+// ============================================================
+// PERSIST CHAT
+// ============================================================
 
-                        <label class="check">
+function persistChats() {
+    try {
+        localStorage.setItem(
+            VGRO_STORAGE_KEYS.chats,
+            JSON.stringify(state.chats)
+        );
 
-                            <input
-                                type="checkbox"
-                                id="remember"
-                                checked
-                            >
+        if (state.activeChatId) {
+            localStorage.setItem(
+                VGRO_STORAGE_KEYS.activeChat,
+                state.activeChatId
+            );
+        }
 
-                            <span>
-                                Remember me
-                            </span>
+    } catch (error) {
+        console.error(
+            "[VGRO CHAT] Gagal menyimpan chat:",
+            error
+        );
+    }
+}
 
-                        </label>
+// ============================================================
+// CREATE NEW CHAT
+// ============================================================
 
+function createNewChat(render = true) {
+    const id =
+        `chat_${Date.now()}_${Math.random()
+            .toString(36)
+            .slice(2, 7)}`;
 
-                        <a
-                            href="#"
-                            id="forgot"
-                        >
-                            Forgot password?
-                        </a>
+    state.chats[id] = {
+        id: id,
+        title: null,
+        messages: []
+    };
 
-                    </div>
+    state.activeChatId = id;
 
+    persistChats();
 
-                    <!-- SUBMIT -->
-                    <button
-                        class="submit"
-                        type="submit"
-                        id="submit"
-                    >
-                        Log in
-                        <span>→</span>
-                    </button>
+    if (render) {
+        renderSidebarHistory();
+        renderActiveChat();
+        closeMobileSidebar();
 
+        const input =
+            document.getElementById("chatInput");
 
-                    <!-- TERMS -->
-                    <p class="terms">
-                        By continuing, you agree to use VGRO responsibly.
-                    </p>
+        if (input) {
+            input.value = "";
+            autoGrow(input);
+            toggleSendButton();
+            input.focus();
+        }
+    }
+}
 
+// ============================================================
+// GET ACTIVE CHAT
+// ============================================================
 
-                    <!-- MESSAGE -->
-                    <p
-                        class="message"
-                        id="error"
-                    ></p>
+function getActiveChat() {
+    return state.chats[state.activeChatId];
+}
 
-                </form>
+// ============================================================
+// CHAT TITLE
+// ============================================================
 
-            </div>
+function deriveTitle(text) {
+    const trimmed = String(text || "").trim();
 
-        </section>
+    if (trimmed.length > 38) {
+        return trimmed.slice(0, 38) + "…";
+    }
 
+    return trimmed || "New Chat";
+}
 
-        <!-- BACK TO LANDING -->
-        <a
-            class="back"
-            href="index.html"
-        >
-            ← Back to VGRO landing
-        </a>
+// ============================================================
+// SIDEBAR HISTORY
+// ============================================================
 
-    </main>
+function renderSidebarHistory() {
+    const list =
+        document.getElementById("chatHistory");
 
+    if (!list) {
+        return;
+    }
 
-    <!-- AUTH JAVASCRIPT -->
-    <script src="js/auth.js"></script>
+    const chats =
+        Object.values(state.chats)
+            .filter(
+                (chat) =>
+                    Array.isArray(chat.messages) &&
+                    chat.messages.length > 0
+            )
+            .sort((a, b) => {
+                const aTime =
+                    Number(
+                        String(a.id).split("_")[1]
+                    ) || 0;
 
-</body>
+                const bTime =
+                    Number(
+                        String(b.id).split("_")[1]
+                    ) || 0;
 
-</html>
+                return bTime - aTime;
+            });
+
+    list.innerHTML = "";
+
+    if (!chats.length) {
+        const empty =
+            document.createElement("p");
+
+        empty.className =
+            "history-empty";
+
+        if (
+            typeof VGRO_I18N !== "undefined" &&
+            typeof VGRO_I18N.t === "function"
+        ) {
+            empty.textContent =
+                VGRO_I18N.t("chat.noChats");
+        } else {
+            empty.textContent =
+                "Belum ada percakapan.";
+        }
+
+        list.appendChild(empty);
+        return;
+    }
+
+    chats.forEach((chat) => {
+        const button =
+            document.createElement("button");
+
+        button.type = "button";
+
+        button.className =
+            "history-item" +
+            (
+                chat.id === state.activeChatId
+                    ? " active"
+                    : ""
+            );
+
+        button.textContent =
+            chat.title ||
+            deriveTitle(
+                chat.messages[0]?.text || ""
+            );
+
+        button.addEventListener(
+            "click",
+            () => {
+                if (isSending) {
+                    return;
+                }
+
+                state.activeChatId =
+                    chat.id;
+
+                persistChats();
+                renderSidebarHistory();
+                renderActiveChat();
+                closeMobileSidebar();
+
+                const input =
+                    document.getElementById(
+                        "chatInput"
+                    );
+
+                if (input) {
+                    input.focus();
+                }
+            }
+        );
+
+        list.appendChild(button);
+    });
+}
+
+// ============================================================
+// RENDER ACTIVE CHAT
+// ============================================================
+
+function renderActiveChat() {
+    const scroll =
+        document.getElementById("chatScroll");
+
+    if (!scroll) {
+        return;
+    }
+
+    const chat =
+        getActiveChat();
+
+    scroll.innerHTML = "";
+
+    if (
+        !chat ||
+        !Array.isArray(chat.messages) ||
+        chat.messages.length === 0
+    ) {
+        scroll.appendChild(
+            buildEmptyState()
+        );
+
+        return;
+    }
+
+    chat.messages.forEach((message) => {
+        scroll.appendChild(
+            buildMessageRow(
+                message.role,
+                message.text
+            )
+        );
+    });
+
+    scroll.scrollTop =
+        scroll.scrollHeight;
+}
+
+// ============================================================
+// EMPTY STATE
+// ============================================================
+
+function buildEmptyState() {
+    const wrap =
+        document.createElement("div");
+
+    wrap.className =
+        "chat-empty";
+
+    let title =
+        "How can I help you?";
+
+    let body =
+        "Tulis pesan untuk mulai menggunakan VGRO AI.";
+
+    if (
+        typeof VGRO_I18N !== "undefined" &&
+        typeof VGRO_I18N.t === "function"
+    ) {
+        title =
+            VGRO_I18N.t(
+                "chat.emptyTitle"
+            );
+
+        body =
+            VGRO_I18N.t(
+                "chat.emptyBody"
+            );
+    }
+
+    const orb =
+        document.createElement("div");
+
+    orb.className =
+        "orb-mini";
+
+    orb.setAttribute(
+        "aria-hidden",
+        "true"
+    );
+
+    const heading =
+        document.createElement("h3");
+
+    heading.textContent =
+        title;
+
+    const paragraph =
+        document.createElement("p");
+
+    paragraph.textContent =
+        body;
+
+    wrap.appendChild(orb);
+    wrap.appendChild(heading);
+    wrap.appendChild(paragraph);
+
+    return wrap;
+}
+
+// ============================================================
+// MESSAGE ROW
+// ============================================================
+
+function buildMessageRow(role, text) {
+    const row =
+        document.createElement("div");
+
+    row.className =
+        `msg-row ${role}`;
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        `avatar ${
+            role === "user"
+                ? "user"
+                : "vgro"
+        }`;
+
+    if (role === "user") {
+        let you = "U";
+
+        if (
+            typeof VGRO_I18N !== "undefined" &&
+            typeof VGRO_I18N.t === "function"
+        ) {
+            const translated =
+                VGRO_I18N.t("chat.you");
+
+            if (translated) {
+                you =
+                    translated.slice(0, 1);
+            }
+        }
+
+        avatar.textContent =
+            you;
+    } else {
+        avatar.textContent =
+            "V";
+    }
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "bubble";
+
+    bubble.textContent =
+        text;
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+
+    return row;
+}
+
+// ============================================================
+// TYPING INDICATOR
+// ============================================================
+
+function buildTypingRow() {
+    const row =
+        document.createElement("div");
+
+    row.className =
+        "msg-row vgro";
+
+    row.id =
+        "typingRow";
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        "avatar vgro";
+
+    avatar.textContent =
+        "V";
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "bubble typing";
+
+    for (let i = 0; i < 3; i++) {
+        const dot =
+            document.createElement("span");
+
+        bubble.appendChild(dot);
+    }
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+
+    return row;
+}
+
+// ============================================================
+// SEND FLOW
+// ============================================================
+
+async function handleSend() {
+    if (isSending) {
+        return;
+    }
+
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    if (!input) {
+        console.error(
+            "[VGRO] chatInput tidak ditemukan."
+        );
+
+        return;
+    }
+
+    const text =
+        input.value.trim();
+
+    if (!text) {
+        return;
+    }
+
+    let chat =
+        getActiveChat();
+
+    if (!chat) {
+        createNewChat(false);
+        chat = getActiveChat();
+    }
+
+    if (!chat) {
+        return;
+    }
+
+    isSending = true;
+
+    // Simpan pesan user
+    chat.messages.push({
+        role: "user",
+        text: text
+    });
+
+    // Buat judul chat otomatis
+    if (!chat.title) {
+        chat.title =
+            deriveTitle(text);
+    }
+
+    persistChats();
+    renderSidebarHistory();
+    renderActiveChat();
+
+    input.value = "";
+    autoGrow(input);
+    toggleSendButton();
+
+    const scroll =
+        document.getElementById(
+            "chatScroll"
+        );
+
+    if (scroll) {
+        scroll.appendChild(
+            buildTypingRow()
+        );
+
+        scroll.scrollTop =
+            scroll.scrollHeight;
+    }
+
+    try {
+        const reply =
+            await sendMessage(
+                text,
+                chat.messages
+            );
+
+        document
+            .getElementById(
+                "typingRow"
+            )
+            ?.remove();
+
+        chat.messages.push({
+            role: "vgro",
+            text: reply
+        });
+
+        persistChats();
+        renderActiveChat();
+
+    } catch (error) {
+        console.error(
+            "[VGRO SEND ERROR]",
+            error
+        );
+
+        document
+            .getElementById(
+                "typingRow"
+            )
+            ?.remove();
+
+        chat.messages.push({
+            role: "vgro",
+            text:
+                getConnectionErrorMessage()
+        });
+
+        persistChats();
+        renderActiveChat();
+
+    } finally {
+        isSending = false;
+
+        toggleSendButton();
+
+        const currentInput =
+            document.getElementById(
+                "chatInput"
+            );
+
+        if (currentInput) {
+            currentInput.focus();
+        }
+    }
+}
+
+// ============================================================
+// TEXTAREA
+// ============================================================
+
+function autoGrow(textarea) {
+    if (!textarea) {
+        return;
+    }
+
+    textarea.style.height =
+        "auto";
+
+    textarea.style.height =
+        Math.min(
+            textarea.scrollHeight,
+            160
+        ) + "px";
+}
+
+function toggleSendButton() {
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    const button =
+        document.getElementById(
+            "sendBtn"
+        );
+
+    if (!input || !button) {
+        return;
+    }
+
+    button.disabled =
+        isSending ||
+        input.value.trim().length === 0;
+
+    if (isSending) {
+        button.setAttribute(
+            "aria-busy",
+            "true"
+        );
+    } else {
+        button.removeAttribute(
+            "aria-busy"
+        );
+    }
+}
+
+// ============================================================
+// THEME
+// ============================================================
+
+function loadTheme() {
+    const saved =
+        localStorage.getItem(
+            VGRO_STORAGE_KEYS.theme
+        ) || "dark";
+
+    document.body.setAttribute(
+        "data-theme",
+        saved
+    );
+
+    updateThemeButtons(saved);
+}
+
+function setTheme(theme) {
+    if (!theme) {
+        return;
+    }
+
+    document.body.setAttribute(
+        "data-theme",
+        theme
+    );
+
+    localStorage.setItem(
+        VGRO_STORAGE_KEYS.theme,
+        theme
+    );
+
+    updateThemeButtons(theme);
+}
+
+function updateThemeButtons(theme) {
+    document
+        .querySelectorAll(
+            "[data-theme-option]"
+        )
+        .forEach((button) => {
+            button.classList.toggle(
+                "active",
+                button.getAttribute(
+                    "data-theme-option"
+                ) === theme
+            );
+        });
+}
+
+// ============================================================
+// LANGUAGE
+// ============================================================
+
+function setLanguageMode(mode) {
+    if (
+        typeof VGRO_I18N === "undefined" ||
+        typeof VGRO_I18N.setMode !== "function"
+    ) {
+        return;
+    }
+
+    VGRO_I18N.setMode(mode);
+
+    document
+        .querySelectorAll(
+            "[data-lang-option]"
+        )
+        .forEach((button) => {
+            button.classList.toggle(
+                "active",
+                button.getAttribute(
+                    "data-lang-option"
+                ) === mode
+            );
+        });
+}
+
+// ============================================================
+// EVENT WIRING
+// ============================================================
+
+function bindEvents() {
+    const input =
+        document.getElementById(
+            "chatInput"
+        );
+
+    const sendBtn =
+        document.getElementById(
+            "sendBtn"
+        );
+
+    const form =
+        document.getElementById(
+            "chatForm"
+        );
+
+    const newChatBtn =
+        document.getElementById(
+            "newChatBtn"
+        );
+
+    const clearChatBtn =
+        document.getElementById(
+            "clearChatBtn"
+        );
+
+    const settingsBtn =
+        document.getElementById(
+            "settingsBtn"
+        );
+
+    const settingsModal =
+        document.getElementById(
+            "settingsModal"
+        );
+
+    const settingsClose =
+        document.getElementById(
+            "settingsClose"
+        );
+
+    const sidebarToggle =
+        document.getElementById(
+            "sidebarToggle"
+        );
+
+    const sidebar =
+        document.getElementById(
+            "chatSidebar"
+        );
+
+    const sidebarBackdrop =
+        document.getElementById(
+            "sidebarBackdrop"
+        );
+
+    console.log(
+        "[VGRO] Event binding:",
+        {
+            input: !!input,
+            sendBtn: !!sendBtn,
+            form: !!form,
+            newChatBtn: !!newChatBtn,
+            clearChatBtn: !!clearChatBtn,
+            settingsBtn: !!settingsBtn
+        }
+    );
+
+    // ========================================================
+    // INPUT
+    // ========================================================
+
+    if (input) {
+        input.addEventListener(
+            "input",
+            () => {
+                autoGrow(input);
+                toggleSendButton();
+            }
+        );
+
+        input.addEventListener(
+            "keydown",
+            (event) => {
+                if (
+                    event.key === "Enter" &&
+                    !event.shiftKey
+                ) {
+                    event.preventDefault();
+
+                    if (
+                        !isSending &&
+                        sendBtn &&
+                        !sendBtn.disabled
+                    ) {
+                        handleSend();
+                    }
+                }
+            }
+        );
+    }
+
+    // ========================================================
+    // FORM
+    // ========================================================
+
+    if (form) {
+        form.addEventListener(
+            "submit",
+            (event) => {
+                event.preventDefault();
+
+                if (
+                    !isSending &&
+                    sendBtn &&
+                    !sendBtn.disabled
+                ) {
+                    handleSend();
+                }
+            }
+        );
+    }
+
+    // ========================================================
+    // SEND BUTTON
+    // ========================================================
+
+    if (sendBtn) {
+        sendBtn.addEventListener(
+            "click",
+            (event) => {
+                event.preventDefault();
+
+                if (
+                    !isSending &&
+                    !sendBtn.disabled
+                ) {
+                    handleSend();
+                }
+            }
+        );
+    }
+
+    // ========================================================
+    // NEW CHAT
+    // ========================================================
+
+    if (newChatBtn) {
+        newChatBtn.addEventListener(
+            "click",
+            () => {
+                if (isSending) {
+                    return;
+                }
+
+                createNewChat();
+            }
+        );
+    }
+
+    // ========================================================
+    // CLEAR CHAT
+    // ========================================================
+
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener(
+            "click",
+            () => {
+                if (isSending) {
+                    return;
+                }
+
+                const chat =
+                    getActiveChat();
+
+                if (!chat) {
+                    return;
+                }
+
+                chat.messages = [];
+                chat.title = null;
+
+                persistChats();
+                renderSidebarHistory();
+                renderActiveChat();
+
+                const input =
+                    document.getElementById(
+                        "chatInput"
+                    );
+
+                if (input) {
+                    input.value = "";
+                    autoGrow(input);
+                    toggleSendButton();
+                    input.focus();
+                }
+            }
+        );
+    }
+
+    // ========================================================
+    // SETTINGS OPEN
+    // ========================================================
+
+    if (
+        settingsBtn &&
+        settingsModal
+    ) {
+        settingsBtn.addEventListener(
+            "click",
+            () => {
+                settingsModal.classList.add(
+                    "open"
+                );
+            }
+        );
+    }
+
+    // ========================================================
+    // SETTINGS CLOSE
+    // ========================================================
+
+    if (
+        settingsClose &&
+        settingsModal
+    ) {
+        settingsClose.addEventListener(
+            "click",
+            () => {
+                settingsModal.classList.remove(
+                    "open"
+                );
+            }
+        );
+    }
+
+    // ========================================================
+    // CLICK OUTSIDE SETTINGS
+    // ========================================================
+
+    if (settingsModal) {
+        settingsModal.addEventListener(
+            "click",
+            (event) => {
+                if (
+                    event.target ===
+                    settingsModal
+                ) {
+                    settingsModal.classList.remove(
+                        "open"
+                    );
+                }
+            }
+        );
+    }
+
+    // ========================================================
+    // THEME BUTTONS
+    // ========================================================
+
+    document
+        .querySelectorAll(
+            "[data-theme-option]"
+        )
+        .forEach((button) => {
+            button.addEventListener(
+                "click",
+                () => {
+                    setTheme(
+                        button.getAttribute(
+                            "data-theme-option"
+                        )
+                    );
+                }
+            );
+        });
+
+    // ========================================================
+    // LANGUAGE BUTTONS
+    // ========================================================
+
+    document
+        .querySelectorAll(
+            "[data-lang-option]"
+        )
+        .forEach((button) => {
+            button.addEventListener(
+                "click",
+                () => {
+                    setLanguageMode(
+                        button.getAttribute(
+                            "data-lang-option"
+                        )
+                    );
+                }
+            );
+        });
+
+    // ========================================================
+    // MOBILE SIDEBAR
+    // ========================================================
+
+    if (
+        sidebarToggle &&
+        sidebar &&
+        sidebarBackdrop
+    ) {
+        sidebarToggle.addEventListener(
+            "click",
+            () => {
+                sidebar.classList.toggle(
+                    "open"
+                );
+
+                sidebarBackdrop.classList.toggle(
+                    "open"
+                );
+            }
+        );
+    }
+
+    if (sidebarBackdrop) {
+        sidebarBackdrop.addEventListener(
+            "click",
+            closeMobileSidebar
+        );
+    }
+
+    autoGrow(input);
+    toggleSendButton();
+}
+
+// ============================================================
+// CLOSE MOBILE SIDEBAR
+// ============================================================
+
+function closeMobileSidebar() {
+    document
+        .getElementById(
+            "chatSidebar"
+        )
+        ?.classList.remove(
+            "open"
+        );
+
+    document
+        .getElementById(
+            "sidebarBackdrop"
+        )
+        ?.classList.remove(
+            "open"
+        );
+}
