@@ -1,149 +1,339 @@
-const tabs = document.querySelectorAll(".tabs button");
-const title = document.getElementById("title");
-const subtitle = document.getElementById("subtitle");
-const nameWrap = document.getElementById("nameWrap");
-const submit = document.getElementById("submit");
-const form = document.getElementById("form");
-const error = document.getElementById("error");
+(() => {
+  "use strict";
 
-let mode = "login";
+  const STORAGE_KEY = "vgro_users";
+  const SESSION_KEY = "vgro_current_user";
 
-function setMode(newMode) {
-mode = newMode;
+  // ================================
+  // AMBIL DATA USER
+  // ================================
+  function getUsers() {
+    try {
+      return JSON.parse(
+        localStorage.getItem(STORAGE_KEY) || "[]"
+      );
+    } catch (error) {
+      return [];
+    }
+  }
 
-```
-tabs.forEach((button) => {
-    button.classList.toggle(
-        "active",
-        button.dataset.mode === newMode
+  // ================================
+  // SIMPAN DATA USER
+  // ================================
+  function saveUsers(users) {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(users)
     );
-});
+  }
 
-nameWrap.classList.toggle(
-    "hidden",
-    newMode !== "register"
-);
+  // ================================
+  // AMBIL FORM
+  // ================================
+  function getForm() {
+    return document.querySelector("form");
+  }
 
-if (newMode === "login") {
-    title.textContent = "Welcome back.";
-    subtitle.textContent =
-        "Sign in to continue to your AI workspace.";
-    submit.innerHTML = 'Log in <span>→</span>';
-} else {
-    title.textContent = "Create your VGRO account.";
-    subtitle.textContent =
-        "Create an account to start your personal AI workspace.";
-    submit.innerHTML = 'Create account <span>→</span>';
-}
+  // ================================
+  // AMBIL INPUT EMAIL & PASSWORD
+  // ================================
+  function getInputs() {
+    const form = getForm();
 
-error.textContent = "";
-```
-
-}
-
-tabs.forEach((button) => {
-button.onclick = () => {
-setMode(button.dataset.mode);
-};
-});
-
-form.onsubmit = (event) => {
-event.preventDefault();
-
-```
-error.textContent = "";
-
-const email = document
-    .getElementById("email")
-    .value
-    .trim()
-    .toLowerCase();
-
-const password = document.getElementById("password").value;
-
-let users = JSON.parse(
-    localStorage.getItem("vgro:users") || "{}"
-);
-
-// REGISTER
-if (mode === "register") {
-    const name = document
-        .getElementById("name")
-        .value
-        .trim();
-
-    if (!name) {
-        error.textContent = "Please enter your name.";
-        return;
+    if (!form) {
+      return {
+        email: null,
+        password: null
+      };
     }
 
-    if (!email) {
-        error.textContent = "Please enter your email.";
-        return;
-    }
+    const email =
+      form.querySelector('input[type="email"]') ||
+      form.querySelector('input[name="email"]');
 
-    if (!password) {
-        error.textContent = "Please enter your password.";
-        return;
-    }
+    const password =
+      form.querySelector('input[type="password"]') ||
+      form.querySelector('input[name="password"]');
 
-    if (users[email]) {
-        error.textContent =
-            "An account with this email already exists.";
-        return;
-    }
-
-    users[email] = {
-        name,
-        email,
-        password
+    return {
+      email,
+      password
     };
+  }
 
-    localStorage.setItem(
-        "vgro:users",
-        JSON.stringify(users)
+  // ================================
+  // PESAN NOTIFIKASI
+  // ================================
+  function showMessage(message, isError = true) {
+    let box = document.querySelector(
+      "#auth-message, .auth-message"
     );
 
-    localStorage.setItem(
-        "vgro:user",
-        JSON.stringify({
-            name,
-            email
-        })
-    );
+    if (!box) {
+      box = document.createElement("div");
 
+      box.id = "auth-message";
+
+      box.style.marginTop = "12px";
+      box.style.padding = "10px 12px";
+      box.style.borderRadius = "10px";
+      box.style.fontSize = "14px";
+
+      const form = getForm();
+
+      if (form) {
+        form.appendChild(box);
+      } else {
+        document.body.appendChild(box);
+      }
+    }
+
+    box.textContent = message;
+
+    box.style.background = isError
+      ? "rgba(239, 68, 68, 0.12)"
+      : "rgba(34, 197, 94, 0.12)";
+
+    box.style.color = isError
+      ? "#ef4444"
+      : "#22c55e";
+  }
+
+  // ================================
+  // MASUK KE WORKSPACE
+  // ================================
+  function goToWorkspace() {
     window.location.href = "app.html";
-    return;
-}
+  }
 
-// LOGIN
-if (!email || !password) {
-    error.textContent =
-        "Please enter your email and password.";
-    return;
-}
+  // ================================
+  // LOGIN
+  // ================================
+  function login(event) {
+    event.preventDefault();
 
-if (!users[email]) {
-    error.textContent =
-        "Email or password is incorrect.";
-    return;
-}
+    const {
+      email,
+      password
+    } = getInputs();
 
-if (users[email].password !== password) {
-    error.textContent =
-        "Email or password is incorrect.";
-    return;
-}
+    const emailValue =
+      email?.value.trim().toLowerCase() || "";
 
-localStorage.setItem(
-    "vgro:user",
-    JSON.stringify({
-        name: users[email].name,
-        email: users[email].email
-    })
-);
+    const passwordValue =
+      password?.value || "";
 
-window.location.href = "app.html";
-```
+    // Cek input
+    if (!emailValue || !passwordValue) {
+      showMessage(
+        "Email dan password wajib diisi."
+      );
+      return;
+    }
 
-};
+    const users = getUsers();
+
+    // Cari user
+    const user = users.find(
+      (item) =>
+        item.email === emailValue &&
+        item.password === passwordValue
+    );
+
+    // Kalau user tidak ditemukan
+    if (!user) {
+      showMessage(
+        "Email atau password salah. Kalau belum punya akun, pilih Create account."
+      );
+      return;
+    }
+
+    // Simpan session
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        name:
+          user.name ||
+          emailValue.split("@")[0],
+
+        email: user.email
+      })
+    );
+
+    showMessage(
+      "Login berhasil. Membuka workspace...",
+      false
+    );
+
+    // Masuk ke workspace
+    setTimeout(
+      goToWorkspace,
+      300
+    );
+  }
+
+  // ================================
+  // REGISTER / CREATE ACCOUNT
+  // ================================
+  function register(event) {
+    event.preventDefault();
+
+    const {
+      email,
+      password
+    } = getInputs();
+
+    const emailValue =
+      email?.value.trim().toLowerCase() || "";
+
+    const passwordValue =
+      password?.value || "";
+
+    // Cek input
+    if (!emailValue || !passwordValue) {
+      showMessage(
+        "Email dan password wajib diisi."
+      );
+      return;
+    }
+
+    // Password minimal
+    if (passwordValue.length < 6) {
+      showMessage(
+        "Password minimal 6 karakter."
+      );
+      return;
+    }
+
+    const users = getUsers();
+
+    // Cek apakah email sudah ada
+    const alreadyExists = users.some(
+      (item) =>
+        item.email === emailValue
+    );
+
+    if (alreadyExists) {
+      showMessage(
+        "Email sudah terdaftar. Silakan login."
+      );
+      return;
+    }
+
+    // Buat user baru
+    users.push({
+      name:
+        emailValue.split("@")[0],
+
+      email:
+        emailValue,
+
+      password:
+        passwordValue
+    });
+
+    saveUsers(users);
+
+    // Simpan session
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        name:
+          emailValue.split("@")[0],
+
+        email:
+          emailValue
+      })
+    );
+
+    showMessage(
+      "Akun berhasil dibuat. Membuka workspace...",
+      false
+    );
+
+    // Masuk ke workspace
+    setTimeout(
+      goToWorkspace,
+      300
+    );
+  }
+
+  // ================================
+  // SETUP AUTH
+  // ================================
+  function setup() {
+    const form = getForm();
+
+    if (!form) {
+      console.warn(
+        "[VGRO AUTH] Form login tidak ditemukan."
+      );
+
+      return;
+    }
+
+    // Login melalui submit form
+    form.addEventListener(
+      "submit",
+      login
+    );
+
+    // Cari tombol Create Account
+    const buttons = [
+      ...document.querySelectorAll(
+        "button, a"
+      )
+    ];
+
+    buttons.forEach(
+      (button) => {
+        const text =
+          (
+            button.textContent || ""
+          )
+            .trim()
+            .toLowerCase();
+
+        if (
+          text.includes(
+            "create account"
+          ) ||
+          text.includes(
+            "buat akun"
+          ) ||
+          text.includes(
+            "daftar"
+          )
+        ) {
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
+
+              register(event);
+            }
+          );
+        }
+      }
+    );
+
+    console.log(
+      "[VGRO AUTH] Auth berhasil dimuat."
+    );
+  }
+
+  // ================================
+  // JALANKAN SETELAH HTML SIAP
+  // ================================
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      setup
+    );
+  } else {
+    setup();
+  }
+})();
