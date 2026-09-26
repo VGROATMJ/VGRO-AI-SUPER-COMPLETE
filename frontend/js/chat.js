@@ -1,375 +1,879 @@
-/**
- * VGRO AI — chat.js
- * -----------------------------------------------------------------------
- * Everything the chat page needs: message rendering, localStorage-backed
- * chat history, settings, and the sendMessage() abstraction.
- *
- * HOW TO CONNECT A REAL BACKEND LATER
- * -----------------------------------------------------------------------
- * Right now sendMessage() resolves with a local mock reply. Once
- * backend/ is running (see backend/README.md), replace the body of
- * sendMessage() with a fetch call, for example:
- *
- *   async function sendMessage(message, history) {
- *     const res = await fetch("/api/chat", {
- *       method: "POST",
- *       headers: { "Content-Type": "application/json" },
- *       body: JSON.stringify({ message, history, language: VGRO_I18N.getActiveLang() }),
- *     });
- *     if (!res.ok) throw new Error("VGRO backend error");
- *     const data = await res.json();
- *     return data.reply;
- *   }
- *
- * No other part of this file needs to change: the rest of the UI only
- * ever calls sendMessage(text, history) and awaits a string back.
- * -----------------------------------------------------------------------
- */
-
 const VGRO_STORAGE_KEYS = {
-  chats: "vgro:chats",
-  activeChat: "vgro:activeChat",
-  theme: "vgro:theme",
-  temperature: "vgro:temperature",
+chats: "vgro:chats",
+activeChat: "vgro:activeChat",
+theme: "vgro:theme",
+temperature: "vgro:temperature",
 };
+
+// Backend VGRO AI
+const VGRO_BACKEND_URL =
+"https://vgro-ai-super-complete-g7xg.vercel.app";
 
 let state = {
-  chats: {},        // { chatId: { id, title, messages: [{role, text}] } }
-  activeChatId: null,
+chats: {},
+activeChatId: null,
 };
 
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
 document.addEventListener("DOMContentLoaded", () => {
-  VGRO_I18N.applyToDocument();
-  loadTheme();
-  loadChats();
-  bindEvents();
-  renderSidebarHistory();
-  renderActiveChat();
-  document.addEventListener("vgro:languagechange", renderActiveChat);
+VGRO_I18N.applyToDocument();
+
+```
+loadTheme();
+loadChats();
+bindEvents();
+
+renderSidebarHistory();
+renderActiveChat();
+
+document.addEventListener(
+    "vgro:languagechange",
+    renderActiveChat
+);
+```
+
 });
 
-/* -------------------------------------------------------------------- */
-/* sendMessage() — the ONE function to swap for real backend/Ollama use */
-/* -------------------------------------------------------------------- */
+// ============================================================
+// SEND MESSAGE
+// Frontend → Backend Vercel
+// ============================================================
+
 async function sendMessage(message, history) {
-  try {
-    const res = await fetch("/api/chat", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({message, history, language:VGRO_I18N.getActiveLang()})});
-    if (!res.ok) throw new Error("Backend unavailable");
-    const data = await res.json();
-    return data.reply || "VGRO tidak memberikan jawaban.";
-  } catch (e) {
-    return mockReply(message, history);
-  }
+try {
+const previousHistory = Array.isArray(history)
+? history.slice(0, -1)
+: [];
+
+```
+    const response = await fetch(
+        `${VGRO_BACKEND_URL}/api/chat`,
+        {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+                message: message,
+                history: previousHistory,
+                language: VGRO_I18N.getActiveLang(),
+            }),
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            `Backend error: ${response.status}`
+        );
+    }
+
+    const data = await response.json();
+
+    if (!data.reply) {
+        throw new Error(
+            "Backend tidak memberikan jawaban."
+        );
+    }
+
+    return data.reply;
+
+} catch (error) {
+    console.error(
+        "VGRO backend error:",
+        error
+    );
+
+    return getConnectionErrorMessage();
+}
+```
+
 }
 
-function mockReply(message) {
-  const lang = VGRO_I18N.getActiveLang();
-  const dict = VGRO_TRANSLATIONS[lang] || VGRO_TRANSLATIONS.en;
-  const lower = message.toLowerCase();
+// ============================================================
+// CONNECTION ERROR MESSAGE
+// ============================================================
 
-  return new Promise((resolve) => {
-    const delay = 700 + Math.random() * 900;
-    setTimeout(() => {
-      if (/machine learning|apa itu ml|belajar mesin/.test(lower)) {
-        resolve(dict.mock.ml);
-      } else if (/^(hai|halo|hi|hello|hey)\b/.test(lower.trim())) {
-        resolve(dict.mock.greeting);
-      } else {
-        resolve(dict.mock.fallback);
-      }
-    }, delay);
-  });
+function getConnectionErrorMessage() {
+const lang = VGRO_I18N.getActiveLang();
+
+```
+if (lang === "id") {
+    return "Maaf, VGRO sedang mengalami masalah saat menghubungkan ke server.";
 }
 
-/* -------------------------------------------------------------------- */
-/* Chat storage                                                          */
-/* -------------------------------------------------------------------- */
+return "Sorry, VGRO is having trouble connecting to the server.";
+```
+
+}
+
+// ============================================================
+// CHAT STORAGE
+// ============================================================
 
 function loadChats() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(VGRO_STORAGE_KEYS.chats) || "{}");
-    state.chats = saved;
-  } catch {
-    state.chats = {};
-  }
-  state.activeChatId = localStorage.getItem(VGRO_STORAGE_KEYS.activeChat);
+try {
+const saved = JSON.parse(
+localStorage.getItem(
+VGRO_STORAGE_KEYS.chats
+) || "{}"
+);
 
-  if (!state.activeChatId || !state.chats[state.activeChatId]) {
+```
+    state.chats = saved;
+} catch {
+    state.chats = {};
+}
+
+state.activeChatId =
+    localStorage.getItem(
+        VGRO_STORAGE_KEYS.activeChat
+    );
+
+if (
+    !state.activeChatId ||
+    !state.chats[state.activeChatId]
+) {
     createNewChat(false);
-  }
+}
+```
+
 }
 
 function persistChats() {
-  localStorage.setItem(VGRO_STORAGE_KEYS.chats, JSON.stringify(state.chats));
-  localStorage.setItem(VGRO_STORAGE_KEYS.activeChat, state.activeChatId);
+localStorage.setItem(
+VGRO_STORAGE_KEYS.chats,
+JSON.stringify(state.chats)
+);
+
+```
+localStorage.setItem(
+    VGRO_STORAGE_KEYS.activeChat,
+    state.activeChatId
+);
+```
+
 }
 
 function createNewChat(render = true) {
-  const id = `chat_${Date.now()}`;
-  state.chats[id] = { id, title: null, messages: [] };
-  state.activeChatId = id;
-  persistChats();
-  if (render) {
+const id = `chat_${Date.now()}`;
+
+```
+state.chats[id] = {
+    id,
+    title: null,
+    messages: [],
+};
+
+state.activeChatId = id;
+
+persistChats();
+
+if (render) {
     renderSidebarHistory();
     renderActiveChat();
     closeMobileSidebar();
-  }
+}
+```
+
 }
 
 function getActiveChat() {
-  return state.chats[state.activeChatId];
+return state.chats[state.activeChatId];
 }
 
 function deriveTitle(text) {
-  const trimmed = text.trim();
-  return trimmed.length > 38 ? trimmed.slice(0, 38) + "…" : trimmed;
+const trimmed = text.trim();
+
+```
+return trimmed.length > 38
+    ? trimmed.slice(0, 38) + "…"
+    : trimmed;
+```
+
 }
 
-/* -------------------------------------------------------------------- */
-/* Rendering                                                             */
-/* -------------------------------------------------------------------- */
+// ============================================================
+// RENDER SIDEBAR HISTORY
+// ============================================================
 
 function renderSidebarHistory() {
-  const list = document.getElementById("chatHistory");
-  if (!list) return;
-  const chats = Object.values(state.chats)
-    .filter((c) => c.messages.length > 0)
-    .sort((a, b) => Number(b.id.split("_")[1]) - Number(a.id.split("_")[1]));
+const list =
+document.getElementById("chatHistory");
 
-  list.innerHTML = "";
+```
+if (!list) return;
 
-  if (!chats.length) {
-    const empty = document.createElement("p");
+const chats = Object.values(state.chats)
+    .filter(
+        (chat) => chat.messages.length > 0
+    )
+    .sort(
+        (a, b) =>
+            Number(b.id.split("_")[1]) -
+            Number(a.id.split("_")[1])
+    );
+
+list.innerHTML = "";
+
+if (!chats.length) {
+    const empty =
+        document.createElement("p");
+
     empty.className = "history-empty";
-    empty.setAttribute("data-i18n", "chat.noChats");
-    empty.textContent = VGRO_I18N.t("chat.noChats");
-    list.appendChild(empty);
-    return;
-  }
 
-  chats.forEach((chat) => {
-    const btn = document.createElement("button");
-    btn.className = "history-item" + (chat.id === state.activeChatId ? " active" : "");
-    btn.textContent = chat.title || deriveTitle(chat.messages[0].text);
-    btn.addEventListener("click", () => {
-      state.activeChatId = chat.id;
-      persistChats();
-      renderSidebarHistory();
-      renderActiveChat();
-      closeMobileSidebar();
-    });
-    list.appendChild(btn);
-  });
+    empty.setAttribute(
+        "data-i18n",
+        "chat.noChats"
+    );
+
+    empty.textContent =
+        VGRO_I18N.t("chat.noChats");
+
+    list.appendChild(empty);
+
+    return;
 }
+
+chats.forEach((chat) => {
+    const button =
+        document.createElement("button");
+
+    button.className =
+        "history-item" +
+        (
+            chat.id === state.activeChatId
+                ? " active"
+                : ""
+        );
+
+    button.textContent =
+        chat.title ||
+        deriveTitle(
+            chat.messages[0].text
+        );
+
+    button.addEventListener(
+        "click",
+        () => {
+            state.activeChatId =
+                chat.id;
+
+            persistChats();
+
+            renderSidebarHistory();
+            renderActiveChat();
+
+            closeMobileSidebar();
+        }
+    );
+
+    list.appendChild(button);
+});
+```
+
+}
+
+// ============================================================
+// RENDER ACTIVE CHAT
+// ============================================================
 
 function renderActiveChat() {
-  const scroll = document.getElementById("chatScroll");
-  if (!scroll) return;
-  const chat = getActiveChat();
-  scroll.innerHTML = "";
+const scroll =
+document.getElementById("chatScroll");
 
-  if (!chat || chat.messages.length === 0) {
-    scroll.appendChild(buildEmptyState());
+```
+if (!scroll) return;
+
+const chat = getActiveChat();
+
+scroll.innerHTML = "";
+
+if (
+    !chat ||
+    chat.messages.length === 0
+) {
+    scroll.appendChild(
+        buildEmptyState()
+    );
+
     return;
-  }
-
-  chat.messages.forEach((msg) => scroll.appendChild(buildMessageRow(msg.role, msg.text)));
-  scroll.scrollTop = scroll.scrollHeight;
 }
+
+chat.messages.forEach((message) => {
+    scroll.appendChild(
+        buildMessageRow(
+            message.role,
+            message.text
+        )
+    );
+});
+
+scroll.scrollTop =
+    scroll.scrollHeight;
+```
+
+}
+
+// ============================================================
+// EMPTY STATE
+// ============================================================
 
 function buildEmptyState() {
-  const wrap = document.createElement("div");
-  wrap.className = "chat-empty";
-  wrap.innerHTML = `
-    <div class="orb-mini" aria-hidden="true"></div>
-    <h3 data-i18n="chat.emptyTitle">${VGRO_I18N.t("chat.emptyTitle")}</h3>
-    <p data-i18n="chat.emptyBody">${VGRO_I18N.t("chat.emptyBody")}</p>
-  `;
-  return wrap;
+const wrap =
+document.createElement("div");
+
+```
+wrap.className = "chat-empty";
+
+wrap.innerHTML = `
+    <div
+        class="orb-mini"
+        aria-hidden="true"
+    ></div>
+
+    <h3 data-i18n="chat.emptyTitle">
+        ${VGRO_I18N.t("chat.emptyTitle")}
+    </h3>
+
+    <p data-i18n="chat.emptyBody">
+        ${VGRO_I18N.t("chat.emptyBody")}
+    </p>
+`;
+
+return wrap;
+```
+
 }
+
+// ============================================================
+// MESSAGE ROW
+// ============================================================
 
 function buildMessageRow(role, text) {
-  const row = document.createElement("div");
-  row.className = `msg-row ${role}`;
+const row =
+document.createElement("div");
 
-  const avatar = document.createElement("div");
-  avatar.className = `avatar ${role === "user" ? "user" : "vgro"}`;
-  avatar.textContent = role === "user" ? VGRO_I18N.t("chat.you").slice(0, 1) : "V";
+```
+row.className =
+    `msg-row ${role}`;
 
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = text;
+const avatar =
+    document.createElement("div");
 
-  row.appendChild(avatar);
-  row.appendChild(bubble);
-  return row;
+avatar.className =
+    `avatar ${
+        role === "user"
+            ? "user"
+            : "vgro"
+    }`;
+
+avatar.textContent =
+    role === "user"
+        ? VGRO_I18N
+              .t("chat.you")
+              .slice(0, 1)
+        : "V";
+
+const bubble =
+    document.createElement("div");
+
+bubble.className = "bubble";
+
+bubble.textContent = text;
+
+row.appendChild(avatar);
+row.appendChild(bubble);
+
+return row;
+```
+
 }
+
+// ============================================================
+// TYPING INDICATOR
+// ============================================================
 
 function buildTypingRow() {
-  const row = document.createElement("div");
-  row.className = "msg-row vgro";
-  row.id = "typingRow";
-  row.innerHTML = `
-    <div class="avatar vgro">V</div>
-    <div class="bubble typing"><span></span><span></span><span></span></div>
-  `;
-  return row;
+const row =
+document.createElement("div");
+
+```
+row.className = "msg-row vgro";
+row.id = "typingRow";
+
+row.innerHTML = `
+    <div class="avatar vgro">
+        V
+    </div>
+
+    <div class="bubble typing">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+`;
+
+return row;
+```
+
 }
 
-/* -------------------------------------------------------------------- */
-/* Sending flow                                                          */
-/* -------------------------------------------------------------------- */
+// ============================================================
+// SEND FLOW
+// ============================================================
 
 async function handleSend() {
-  const input = document.getElementById("chatInput");
-  const text = input.value.trim();
-  if (!text) return;
+const input =
+document.getElementById("chatInput");
 
-  const chat = getActiveChat();
-  chat.messages.push({ role: "user", text });
-  if (!chat.title) chat.title = deriveTitle(text);
-  persistChats();
-  renderSidebarHistory();
-  renderActiveChat();
+```
+const text = input.value.trim();
 
-  input.value = "";
-  autoGrow(input);
-  toggleSendButton();
+if (!text) return;
 
-  const scroll = document.getElementById("chatScroll");
-  scroll.appendChild(buildTypingRow());
-  scroll.scrollTop = scroll.scrollHeight;
+const chat = getActiveChat();
 
-  try {
-    const reply = await sendMessage(text, chat.messages);
-    document.getElementById("typingRow")?.remove();
-    chat.messages.push({ role: "vgro", text: reply });
-    persistChats();
-    renderActiveChat();
-  } catch (err) {
-    document.getElementById("typingRow")?.remove();
-    chat.messages.push({ role: "vgro", text: VGRO_I18N.t("mock.fallback") });
-    persistChats();
-    renderActiveChat();
-    console.error("VGRO sendMessage error:", err);
-  }
+if (!chat) return;
+
+chat.messages.push({
+    role: "user",
+    text: text,
+});
+
+if (!chat.title) {
+    chat.title = deriveTitle(text);
 }
 
+persistChats();
+
+renderSidebarHistory();
+renderActiveChat();
+
+input.value = "";
+
+autoGrow(input);
+toggleSendButton();
+
+const scroll =
+    document.getElementById("chatScroll");
+
+scroll.appendChild(
+    buildTypingRow()
+);
+
+scroll.scrollTop =
+    scroll.scrollHeight;
+
+try {
+    const reply = await sendMessage(
+        text,
+        chat.messages
+    );
+
+    document
+        .getElementById("typingRow")
+        ?.remove();
+
+    chat.messages.push({
+        role: "vgro",
+        text: reply,
+    });
+
+    persistChats();
+    renderActiveChat();
+
+} catch (error) {
+    document
+        .getElementById("typingRow")
+        ?.remove();
+
+    chat.messages.push({
+        role: "vgro",
+        text: getConnectionErrorMessage(),
+    });
+
+    persistChats();
+    renderActiveChat();
+
+    console.error(
+        "VGRO sendMessage error:",
+        error
+    );
+}
+```
+
+}
+
+// ============================================================
+// TEXTAREA
+// ============================================================
+
 function autoGrow(textarea) {
-  textarea.style.height = "auto";
-  textarea.style.height = Math.min(textarea.scrollHeight, 160) + "px";
+textarea.style.height = "auto";
+
+```
+textarea.style.height =
+    Math.min(
+        textarea.scrollHeight,
+        160
+    ) + "px";
+```
+
 }
 
 function toggleSendButton() {
-  const input = document.getElementById("chatInput");
-  const btn = document.getElementById("sendBtn");
-  btn.disabled = input.value.trim().length === 0;
+const input =
+document.getElementById("chatInput");
+
+```
+const button =
+    document.getElementById("sendBtn");
+
+if (!input || !button) return;
+
+button.disabled =
+    input.value.trim().length === 0;
+```
+
 }
 
-/* -------------------------------------------------------------------- */
-/* Settings: theme / language / temperature                             */
-/* -------------------------------------------------------------------- */
+// ============================================================
+// THEME
+// ============================================================
 
 function loadTheme() {
-  const saved = localStorage.getItem(VGRO_STORAGE_KEYS.theme) || "dark";
-  document.body.setAttribute("data-theme", saved);
+const saved =
+localStorage.getItem(
+VGRO_STORAGE_KEYS.theme
+) || "dark";
+
+```
+document.body.setAttribute(
+    "data-theme",
+    saved
+);
+```
+
 }
 
 function setTheme(theme) {
-  document.body.setAttribute("data-theme", theme);
-  localStorage.setItem(VGRO_STORAGE_KEYS.theme, theme);
-  document.querySelectorAll("[data-theme-option]").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-theme-option") === theme);
-  });
+document.body.setAttribute(
+"data-theme",
+theme
+);
+
+```
+localStorage.setItem(
+    VGRO_STORAGE_KEYS.theme,
+    theme
+);
+
+document
+    .querySelectorAll(
+        "[data-theme-option]"
+    )
+    .forEach((button) => {
+        button.classList.toggle(
+            "active",
+            button.getAttribute(
+                "data-theme-option"
+            ) === theme
+        );
+    });
+```
+
 }
+
+// ============================================================
+// LANGUAGE
+// ============================================================
 
 function setLanguageMode(mode) {
-  VGRO_I18N.setMode(mode);
-  document.querySelectorAll("[data-lang-option]").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-lang-option") === mode);
-  });
+VGRO_I18N.setMode(mode);
+
+```
+document
+    .querySelectorAll(
+        "[data-lang-option]"
+    )
+    .forEach((button) => {
+        button.classList.toggle(
+            "active",
+            button.getAttribute(
+                "data-lang-option"
+            ) === mode
+        );
+    });
+```
+
 }
 
-/* -------------------------------------------------------------------- */
-/* Event wiring                                                          */
-/* -------------------------------------------------------------------- */
+// ============================================================
+// EVENT WIRING
+// ============================================================
 
 function bindEvents() {
-  const input = document.getElementById("chatInput");
-  const sendBtn = document.getElementById("sendBtn");
-  const form = document.getElementById("chatForm");
-  const newChatBtn = document.getElementById("newChatBtn");
-  const clearChatBtn = document.getElementById("clearChatBtn");
-  const settingsBtn = document.getElementById("settingsBtn");
-  const settingsModal = document.getElementById("settingsModal");
-  const settingsClose = document.getElementById("settingsClose");
-  const sidebarToggle = document.getElementById("sidebarToggle");
-  const sidebar = document.getElementById("chatSidebar");
-  const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+const input =
+document.getElementById("chatInput");
 
-  input.addEventListener("input", () => {
-    autoGrow(input);
-    toggleSendButton();
-  });
+```
+const sendBtn =
+    document.getElementById("sendBtn");
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!sendBtn.disabled) handleSend();
-    }
-  });
+const form =
+    document.getElementById("chatForm");
 
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    if (!sendBtn.disabled) handleSend();
-  });
+const newChatBtn =
+    document.getElementById("newChatBtn");
 
-  newChatBtn.addEventListener("click", () => createNewChat());
+const clearChatBtn =
+    document.getElementById(
+        "clearChatBtn"
+    );
 
-  clearChatBtn.addEventListener("click", () => {
-    const chat = getActiveChat();
-    if (!chat) return;
-    chat.messages = [];
-    chat.title = null;
-    persistChats();
-    renderSidebarHistory();
-    renderActiveChat();
-  });
+const settingsBtn =
+    document.getElementById(
+        "settingsBtn"
+    );
 
-  settingsBtn.addEventListener("click", () => settingsModal.classList.add("open"));
-  settingsClose.addEventListener("click", () => settingsModal.classList.remove("open"));
-  settingsModal.addEventListener("click", (e) => {
-    if (e.target === settingsModal) settingsModal.classList.remove("open");
-  });
+const settingsModal =
+    document.getElementById(
+        "settingsModal"
+    );
 
-  document.querySelectorAll("[data-theme-option]").forEach((btn) => {
-    btn.addEventListener("click", () => setTheme(btn.getAttribute("data-theme-option")));
-    if (btn.getAttribute("data-theme-option") === document.body.getAttribute("data-theme")) {
-      btn.classList.add("active");
-    }
-  });
+const settingsClose =
+    document.getElementById(
+        "settingsClose"
+    );
 
-  document.querySelectorAll("[data-lang-option]").forEach((btn) => {
-    btn.addEventListener("click", () => setLanguageMode(btn.getAttribute("data-lang-option")));
-    if (btn.getAttribute("data-lang-option") === VGRO_I18N.getMode()) {
-      btn.classList.add("active");
-    }
-  });
+const sidebarToggle =
+    document.getElementById(
+        "sidebarToggle"
+    );
 
-  if (sidebarToggle) {
-    sidebarToggle.addEventListener("click", () => {
-      sidebar.classList.toggle("open");
-      sidebarBackdrop.classList.toggle("open");
-    });
-  }
-  if (sidebarBackdrop) {
-    sidebarBackdrop.addEventListener("click", closeMobileSidebar);
-  }
+const sidebar =
+    document.getElementById(
+        "chatSidebar"
+    );
 
-  toggleSendButton();
+const sidebarBackdrop =
+    document.getElementById(
+        "sidebarBackdrop"
+    );
+
+if (input) {
+    input.addEventListener(
+        "input",
+        () => {
+            autoGrow(input);
+            toggleSendButton();
+        }
+    );
+
+    input.addEventListener(
+        "keydown",
+        (event) => {
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey
+            ) {
+                event.preventDefault();
+
+                if (
+                    !sendBtn.disabled
+                ) {
+                    handleSend();
+                }
+            }
+        }
+    );
 }
 
+if (form) {
+    form.addEventListener(
+        "submit",
+        (event) => {
+            event.preventDefault();
+
+            if (
+                !sendBtn.disabled
+            ) {
+                handleSend();
+            }
+        }
+    );
+}
+
+if (newChatBtn) {
+    newChatBtn.addEventListener(
+        "click",
+        () => createNewChat()
+    );
+}
+
+if (clearChatBtn) {
+    clearChatBtn.addEventListener(
+        "click",
+        () => {
+            const chat =
+                getActiveChat();
+
+            if (!chat) return;
+
+            chat.messages = [];
+            chat.title = null;
+
+            persistChats();
+
+            renderSidebarHistory();
+            renderActiveChat();
+        }
+    );
+}
+
+if (
+    settingsBtn &&
+    settingsModal
+) {
+    settingsBtn.addEventListener(
+        "click",
+        () =>
+            settingsModal.classList.add(
+                "open"
+            )
+    );
+}
+
+if (
+    settingsClose &&
+    settingsModal
+) {
+    settingsClose.addEventListener(
+        "click",
+        () =>
+            settingsModal.classList.remove(
+                "open"
+            )
+    );
+}
+
+if (settingsModal) {
+    settingsModal.addEventListener(
+        "click",
+        (event) => {
+            if (
+                event.target ===
+                settingsModal
+            ) {
+                settingsModal.classList.remove(
+                    "open"
+                );
+            }
+        }
+    );
+}
+
+document
+    .querySelectorAll(
+        "[data-theme-option]"
+    )
+    .forEach((button) => {
+        button.addEventListener(
+            "click",
+            () =>
+                setTheme(
+                    button.getAttribute(
+                        "data-theme-option"
+                    )
+                )
+        );
+
+        if (
+            button.getAttribute(
+                "data-theme-option"
+            ) ===
+            document.body.getAttribute(
+                "data-theme"
+            )
+        ) {
+            button.classList.add(
+                "active"
+            );
+        }
+    });
+
+document
+    .querySelectorAll(
+        "[data-lang-option]"
+    )
+    .forEach((button) => {
+        button.addEventListener(
+            "click",
+            () =>
+                setLanguageMode(
+                    button.getAttribute(
+                        "data-lang-option"
+                    )
+                )
+        );
+
+        if (
+            button.getAttribute(
+                "data-lang-option"
+            ) ===
+            VGRO_I18N.getMode()
+        ) {
+            button.classList.add(
+                "active"
+            );
+        }
+    });
+
+if (sidebarToggle) {
+    sidebarToggle.addEventListener(
+        "click",
+        () => {
+            sidebar.classList.toggle(
+                "open"
+            );
+
+            sidebarBackdrop.classList.toggle(
+                "open"
+            );
+        }
+    );
+}
+
+if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener(
+        "click",
+        closeMobileSidebar
+    );
+}
+
+toggleSendButton();
+```
+
+}
+
+// ============================================================
+// MOBILE SIDEBAR
+// ============================================================
+
 function closeMobileSidebar() {
-  document.getElementById("chatSidebar")?.classList.remove("open");
-  document.getElementById("sidebarBackdrop")?.classList.remove("open");
+document
+.getElementById("chatSidebar")
+?.classList.remove("open");
+
+```
+document
+    .getElementById("sidebarBackdrop")
+    ?.classList.remove("open");
+```
+
 }
