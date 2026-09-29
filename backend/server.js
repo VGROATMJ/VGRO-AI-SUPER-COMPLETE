@@ -7,11 +7,8 @@ const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 
-// ===============================
-// CONFIGURATION
-// ===============================
-
 const PORT = process.env.PORT || 3001;
+
 const GEMINI_MODEL =
     process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
@@ -19,9 +16,10 @@ const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY
 });
 
-// ===============================
+
+// =====================================================
 // MIDDLEWARE
-// ===============================
+// =====================================================
 
 app.use(cors());
 app.use(express.json());
@@ -32,9 +30,10 @@ app.use(
     )
 );
 
-// ===============================
+
+// =====================================================
 // HEALTH CHECK
-// ===============================
+// =====================================================
 
 app.get("/api/health", (_req, res) => {
     res.json({
@@ -46,9 +45,10 @@ app.get("/api/health", (_req, res) => {
     });
 });
 
-// ===============================
+
+// =====================================================
 // CHAT API
-// ===============================
+// =====================================================
 
 app.post("/api/chat", async (req, res) => {
     const {
@@ -57,53 +57,88 @@ app.post("/api/chat", async (req, res) => {
         language = "auto"
     } = req.body || {};
 
-    if (!message || typeof message !== "string") {
+
+    // -----------------------------------------------
+    // VALIDASI PESAN
+    // -----------------------------------------------
+
+    if (
+        !message ||
+        typeof message !== "string"
+    ) {
         return res.status(400).json({
-            error: "Field 'message' (string) is required."
+            error:
+                "Field 'message' (string) is required."
         });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+
+    // -----------------------------------------------
+    // CEK API KEY
+    // -----------------------------------------------
+
+    if (
+        !process.env.GEMINI_API_KEY
+    ) {
         return res.status(500).json({
             error:
                 "Gemini API key belum dikonfigurasi di server."
         });
     }
 
-    try {
-        const reply = await getGeminiReply(
-            message,
-            history,
-            language
-        );
 
-        res.json({
+    // -----------------------------------------------
+    // PROSES GEMINI
+    // -----------------------------------------------
+
+    try {
+
+        const reply =
+            await getGeminiReply(
+                message,
+                history,
+                language
+            );
+
+        return res.json({
             reply
         });
 
     } catch (err) {
+
         console.error(
             "[VGRO GEMINI ERROR]",
             err
         );
 
-        res.status(500).json({
+        return res.status(500).json({
+
             error:
                 "VGRO gagal mendapatkan jawaban dari Gemini.",
-            detail: err.message
+
+            detail:
+                err?.message ||
+                String(err)
+
         });
     }
 });
 
-// ===============================
-// GEMINI AI
-// ===============================
+
+// =====================================================
+// GEMINI FUNCTION
+// =====================================================
 
 async function getGeminiReply(
     message,
     history,
     language
 ) {
+
+    // -----------------------------------------------
+    // FORMAT HISTORY
+    // -----------------------------------------------
+
     const previousMessages =
         Array.isArray(history)
             ? history
@@ -116,6 +151,7 @@ async function getGeminiReply(
                         )
                 )
                 .map((item) => {
+
                     const role =
                         item.role === "vgro"
                             ? "Assistant"
@@ -132,12 +168,24 @@ async function getGeminiReply(
                 .join("\n")
             : "";
 
+
+    // -----------------------------------------------
+    // BAHASA
+    // -----------------------------------------------
+
     const languageInstruction =
         language === "id"
             ? "Jawab dalam bahasa Indonesia."
+
             : language === "en"
                 ? "Answer in English."
+
                 : "Gunakan bahasa yang sama dengan bahasa pengguna.";
+
+
+    // -----------------------------------------------
+    // PROMPT VGRO
+    // -----------------------------------------------
 
     const prompt = `
 Kamu adalah VGRO AI, personal AI assistant yang ramah,
@@ -146,8 +194,11 @@ jelas, membantu, dan natural.
 ${languageInstruction}
 
 Berikan jawaban yang langsung membantu pengguna.
+
 Gunakan bahasa yang mudah dipahami.
+
 Jangan menyebut bahwa kamu menggunakan Gemini.
+
 Jangan menyebut API, server, atau konfigurasi internal.
 
 ${
@@ -160,31 +211,48 @@ ${previousMessages}
 }
 
 Pesan pengguna:
+
 ${message}
 `;
 
+
+    // -----------------------------------------------
+    // REQUEST KE GEMINI
+    // -----------------------------------------------
+
     const response =
         await ai.models.generateContent({
+
             model: GEMINI_MODEL,
+
             contents: prompt
+
         });
 
+
+    // -----------------------------------------------
+    // AMBIL HASIL
+    // -----------------------------------------------
+
     return (
-        response.text ||
+        response?.text ||
         "Maaf, VGRO belum mendapatkan jawaban dari AI."
     );
 }
 
-// ===============================
+
+// =====================================================
 // START SERVER
-// ===============================
+// =====================================================
 
 app.listen(
     PORT,
     "0.0.0.0",
     () => {
+
         console.log(
             `VGRO AI running at http://localhost:${PORT}`
         );
+
     }
 );
