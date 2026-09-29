@@ -455,6 +455,7 @@
 
 <!-- CHAT -->
 <script src="js/chat.js"></script>
+<script src="js/migrate-history.js"></script>
 
 
 <!-- SUPABASE AUTH GUARD + LOGOUT -->
@@ -488,6 +489,10 @@
             "VGRO AI login sebagai:",
             session.user.email
         );
+
+        if (typeof window.VGRO_MIGRATE_HISTORY === "function") {
+            window.VGRO_MIGRATE_HISTORY(session);
+        }
 
 
         const logoutBtn =

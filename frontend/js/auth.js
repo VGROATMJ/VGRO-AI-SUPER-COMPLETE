@@ -1,32 +1,7 @@
 (() => {
     "use strict";
 
-    const STORAGE_KEY = "vgro_users";
-    const SESSION_KEY = "vgro_current_user";
-
     let currentMode = "login";
-
-    // =========================================
-    // USER STORAGE
-    // =========================================
-
-    function getUsers() {
-        try {
-            return JSON.parse(
-                localStorage.getItem(STORAGE_KEY) || "[]"
-            );
-        } catch (error) {
-            console.error("Gagal membaca user:", error);
-            return [];
-        }
-    }
-
-    function saveUsers(users) {
-        localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify(users)
-        );
-    }
 
     // =========================================
     // ELEMENT
@@ -84,6 +59,9 @@
         const nameWrap =
             getElement("nameWrap");
 
+        const nameInput =
+            getElement("name");
+
         const password =
             getElement("password");
 
@@ -109,6 +87,10 @@
 
             if (nameWrap) {
                 nameWrap.classList.remove("hidden");
+            }
+
+            if (nameInput) {
+                nameInput.required = true;
             }
 
             if (submit) {
@@ -146,6 +128,10 @@
                 nameWrap.classList.add("hidden");
             }
 
+            if (nameInput) {
+                nameInput.required = false;
+            }
+
             if (submit) {
                 submit.innerHTML =
                     'Log in <span>→</span>';
@@ -165,20 +151,148 @@
     }
 
     // =========================================
-    // LOGIN
+    // REGISTER
     // =========================================
 
-    function login() {
+    async function register() {
+        const nameInput =
+            getElement("name");
+
         const emailInput =
             getElement("email");
 
         const passwordInput =
             getElement("password");
 
+        const submit =
+            getElement("submit");
+
+        const name =
+            nameInput?.value.trim() || "";
+
         const email =
-            emailInput?.value
-                .trim()
-                .toLowerCase();
+            emailInput?.value.trim().toLowerCase() || "";
+
+        const password =
+            passwordInput?.value || "";
+
+        if (!name) {
+            showMessage("Nama wajib diisi.");
+            nameInput?.focus();
+            return;
+        }
+
+        if (!email) {
+            showMessage("Email wajib diisi.");
+            emailInput?.focus();
+            return;
+        }
+
+        if (!password) {
+            showMessage("Password wajib diisi.");
+            passwordInput?.focus();
+            return;
+        }
+
+        if (password.length < 6) {
+            showMessage("Password minimal 6 karakter.");
+            passwordInput?.focus();
+            return;
+        }
+
+        try {
+            submit.disabled = true;
+
+            const {
+                data,
+                error
+            } = await supabaseClient.auth.signUp({
+                email: email,
+                password: password,
+
+                options: {
+                    data: {
+                        name: name
+                    }
+                }
+            });
+
+            if (error) {
+                throw error;
+            }
+
+            /*
+             * Jika Supabase meminta verifikasi email,
+             * session biasanya belum tersedia.
+             */
+
+            if (data.user && !data.session) {
+                showMessage(
+                    "Akun berhasil dibuat. Silakan cek email untuk verifikasi.",
+                    "success"
+                );
+
+                document.getElementById("form").reset();
+
+                setMode("login");
+
+                return;
+            }
+
+            /*
+             * Jika email confirmation tidak aktif,
+             * user langsung mendapatkan session.
+             */
+
+            if (data.session) {
+                showMessage(
+                    "Akun berhasil dibuat. Membuka workspace...",
+                    "success"
+                );
+
+                setTimeout(() => {
+                    window.location.href = "app.html";
+                }, 700);
+
+                return;
+            }
+
+            showMessage(
+                "Akun berhasil dibuat. Silakan login."
+            );
+
+        } catch (error) {
+            console.error(
+                "[VGRO AUTH] Register error:",
+                error
+            );
+
+            showMessage(
+                error.message ||
+                "Gagal membuat akun."
+            );
+
+        } finally {
+            submit.disabled = false;
+        }
+    }
+
+    // =========================================
+    // LOGIN
+    // =========================================
+
+    async function login() {
+        const emailInput =
+            getElement("email");
+
+        const passwordInput =
+            getElement("password");
+
+        const submit =
+            getElement("submit");
+
+        const email =
+            emailInput?.value.trim().toLowerCase() || "";
 
         const password =
             passwordInput?.value || "";
@@ -190,156 +304,65 @@
             return;
         }
 
-        const users = getUsers();
+        try {
+            submit.disabled = true;
 
-        const user = users.find(
-            (item) =>
-                item.email === email &&
-                item.password === password
-        );
+            const {
+                data,
+                error
+            } = await supabaseClient.auth.signInWithPassword({
+                email: email,
+                password: password
+            });
 
-        if (!user) {
+            if (error) {
+                throw error;
+            }
+
+            if (!data.session) {
+                throw new Error(
+                    "Login belum berhasil. Silakan coba lagi."
+                );
+            }
+
             showMessage(
+                "Login berhasil. Membuka workspace...",
+                "success"
+            );
+
+            setTimeout(() => {
+                window.location.href = "app.html";
+            }, 500);
+
+        } catch (error) {
+            console.error(
+                "[VGRO AUTH] Login error:",
+                error
+            );
+
+            showMessage(
+                error.message ||
                 "Email atau password salah."
             );
-            return;
+
+        } finally {
+            submit.disabled = false;
         }
-
-        const session = {
-            name:
-                user.name ||
-                email.split("@")[0],
-
-            email: user.email
-        };
-
-        localStorage.setItem(
-            SESSION_KEY,
-            JSON.stringify(session)
-        );
-
-        showMessage(
-            "Login berhasil. Membuka workspace...",
-            "success"
-        );
-
-        setTimeout(() => {
-            window.location.href = "app.html";
-        }, 500);
-    }
-
-    // =========================================
-    // REGISTER
-    // =========================================
-
-    function register() {
-        const nameInput =
-            getElement("name");
-
-        const emailInput =
-            getElement("email");
-
-        const passwordInput =
-            getElement("password");
-
-        const name =
-            nameInput?.value.trim() || "";
-
-        const email =
-            emailInput?.value
-                .trim()
-                .toLowerCase() || "";
-
-        const password =
-            passwordInput?.value || "";
-
-        if (!name) {
-            showMessage(
-                "Nama wajib diisi."
-            );
-            nameInput?.focus();
-            return;
-        }
-
-        if (!email) {
-            showMessage(
-                "Email wajib diisi."
-            );
-            emailInput?.focus();
-            return;
-        }
-
-        if (!password) {
-            showMessage(
-                "Password wajib diisi."
-            );
-            passwordInput?.focus();
-            return;
-        }
-
-        if (password.length < 6) {
-            showMessage(
-                "Password minimal 6 karakter."
-            );
-            passwordInput?.focus();
-            return;
-        }
-
-        const users = getUsers();
-
-        const exists = users.some(
-            (item) =>
-                item.email === email
-        );
-
-        if (exists) {
-            showMessage(
-                "Email sudah terdaftar. Silakan login."
-            );
-            return;
-        }
-
-        const newUser = {
-            name,
-            email,
-            password
-        };
-
-        users.push(newUser);
-
-        saveUsers(users);
-
-        localStorage.setItem(
-            SESSION_KEY,
-            JSON.stringify({
-                name,
-                email
-            })
-        );
-
-        showMessage(
-            "Akun berhasil dibuat. Membuka workspace...",
-            "success"
-        );
-
-        setTimeout(() => {
-            window.location.href = "app.html";
-        }, 500);
     }
 
     // =========================================
     // FORM SUBMIT
     // =========================================
 
-    function handleSubmit(event) {
+    async function handleSubmit(event) {
         event.preventDefault();
 
         clearMessage();
 
         if (currentMode === "register") {
-            register();
+            await register();
         } else {
-            login();
+            await login();
         }
     }
 
@@ -347,12 +370,93 @@
     // FORGOT PASSWORD
     // =========================================
 
-    function handleForgotPassword(event) {
+    async function handleForgotPassword(event) {
         event.preventDefault();
 
-        showMessage(
-            "Fitur reset password belum tersedia pada versi demo VGRO."
-        );
+        const emailInput =
+            getElement("email");
+
+        const email =
+            emailInput?.value.trim().toLowerCase() || "";
+
+        if (!email) {
+            showMessage(
+                "Masukkan email terlebih dahulu."
+            );
+
+            emailInput?.focus();
+
+            return;
+        }
+
+        try {
+            const { error } =
+                await supabaseClient.auth.resetPasswordForEmail(
+                    email,
+                    {
+                        redirectTo:
+                            window.location.origin +
+                            "/reset-password.html"
+                    }
+                );
+
+            if (error) {
+                throw error;
+            }
+
+            showMessage(
+                "Link reset password sudah dikirim ke email.",
+                "success"
+            );
+
+        } catch (error) {
+            console.error(
+                "[VGRO AUTH] Reset password error:",
+                error
+            );
+
+            showMessage(
+                error.message ||
+                "Gagal mengirim link reset password."
+            );
+        }
+    }
+
+    // =========================================
+    // CHECK SESSION
+    // =========================================
+
+    async function checkSession() {
+        try {
+            const {
+                data,
+                error
+            } = await supabaseClient.auth.getSession();
+
+            if (error) {
+                console.error(
+                    "[VGRO AUTH] Session error:",
+                    error
+                );
+
+                return;
+            }
+
+            /*
+             * Kalau user sudah login,
+             * langsung masuk ke app.html.
+             */
+
+            if (data.session) {
+                window.location.href = "app.html";
+            }
+
+        } catch (error) {
+            console.error(
+                "[VGRO AUTH] Check session error:",
+                error
+            );
+        }
     }
 
     // =========================================
@@ -367,6 +471,7 @@
             console.warn(
                 "[VGRO AUTH] Form tidak ditemukan."
             );
+
             return;
         }
 
@@ -384,46 +489,60 @@
             getElement("forgot");
 
         // Login tab
+
         loginTab?.addEventListener(
             "click",
             (event) => {
                 event.preventDefault();
+
                 setMode("login");
             }
         );
 
         // Register tab
+
         registerTab?.addEventListener(
             "click",
             (event) => {
                 event.preventDefault();
+
                 setMode("register");
             }
         );
 
         // Form
+
         form.addEventListener(
             "submit",
             handleSubmit
         );
 
         // Forgot password
+
         forgot?.addEventListener(
             "click",
             handleForgotPassword
         );
 
         // Default
+
         setMode("login");
 
         console.log(
-            "[VGRO AUTH] Auth berhasil dimuat."
+            "[VGRO AUTH] Supabase Auth berhasil dimuat."
         );
+
+        // Check existing session
+
+        checkSession();
     }
 
+    // =========================================
+    // START
+    // =========================================
+
     if (
-        document.readyState ===
-        "loading"
+        document.readyState === "loading"
     ) {
         document.addEventListener(
             "DOMContentLoaded",
@@ -432,4 +551,5 @@
     } else {
         init();
     }
+
 })();
