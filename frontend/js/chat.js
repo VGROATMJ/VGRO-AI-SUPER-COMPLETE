@@ -19,6 +19,158 @@ const VGRO_BACKEND_URL =
     "https://vgro-ai-super-complete-g7xg.vercel.app";
 
 // ============================================================
+// SUPABASE CHAT SYNC - PHASE 2
+// ============================================================
+
+async function getSupabaseSession() {
+    try {
+        if (typeof supabaseClient === "undefined" || !supabaseClient.auth) return null;
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (error) {
+            console.warn("[VGRO SUPABASE] Session error:", error);
+            return null;
+        }
+        return data?.session || null;
+    } catch (error) {
+        console.warn("[VGRO SUPABASE] Gagal mengambil session:", error);
+        return null;
+    }
+}
+
+async function loadChatsFromSupabase() {
+    try {
+        const session = await getSupabaseSession();
+        if (!session?.user?.id) return false;
+
+        const { data: chats, error: chatError } = await supabaseClient
+            .from("chats")
+            .select("id, title, created_at, updated_at")
+            .eq("user_id", session.user.id)
+            .order("updated_at", { ascending: false });
+
+        if (chatError) {
+            console.warn("[VGRO SUPABASE] Gagal mengambil chats:", chatError);
+            return false;
+        }
+        if (!Array.isArray(chats) || chats.length === 0) return false;
+
+        const chatIds = chats.map((chat) => chat.id);
+        const { data: messages, error: messageError } = await supabaseClient
+            .from("messages")
+            .select("id, chat_id, role, content, created_at")
+            .in("chat_id", chatIds)
+            .order("created_at", { ascending: true });
+
+        if (messageError) {
+            console.warn("[VGRO SUPABASE] Gagal mengambil messages:", messageError);
+            return false;
+        }
+
+        const grouped = {};
+        chats.forEach((chat) => {
+            grouped[chat.id] = {
+                id: chat.id,
+                title: chat.title || null,
+                messages: []
+            };
+        });
+
+        (messages || []).forEach((message) => {
+            if (!grouped[message.chat_id]) return;
+            grouped[message.chat_id].messages.push({
+                role: message.role === "assistant" ? "vgro" : "user",
+                text: message.content || ""
+            });
+        });
+
+        state.chats = grouped;
+        const savedActive = localStorage.getItem(VGRO_STORAGE_KEYS.activeChat);
+        state.activeChatId = savedActive && grouped[savedActive]
+            ? savedActive
+            : chats[0]?.id || null;
+
+        if (!state.activeChatId) return false;
+
+        localStorage.setItem(VGRO_STORAGE_KEYS.chats, JSON.stringify(state.chats));
+        localStorage.setItem(VGRO_STORAGE_KEYS.activeChat, state.activeChatId);
+        return true;
+    } catch (error) {
+        console.warn("[VGRO SUPABASE] Sync history gagal:", error);
+        return false;
+    }
+}
+
+async function createSupabaseChat(title) {
+    try {
+        const session = await getSupabaseSession();
+        if (!session?.user?.id) return null;
+
+        const { data, error } = await supabaseClient
+            .from("chats")
+            .insert({ user_id: session.user.id, title: title || "New Chat" })
+            .select("id, title")
+            .single();
+
+        if (error) {
+            console.warn("[VGRO SUPABASE] Gagal membuat chat:", error);
+            return null;
+        }
+        return data;
+    } catch (error) {
+        console.warn("[VGRO SUPABASE] Create chat error:", error);
+        return null;
+    }
+}
+
+async function saveSupabaseMessage(chatId, role, content) {
+    try {
+        if (!chatId || !content) return false;
+        const session = await getSupabaseSession();
+        if (!session?.user?.id) return false;
+
+        const { error } = await supabaseClient
+            .from("messages")
+            .insert({
+                chat_id: chatId,
+                user_id: session.user.id,
+                role: role === "vgro" ? "assistant" : "user",
+                content: content
+            });
+
+        if (error) {
+            console.warn("[VGRO SUPABASE] Gagal menyimpan message:", error);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.warn("[VGRO SUPABASE] Save message error:", error);
+        return false;
+    }
+}
+
+async function updateSupabaseChat(chatId, title) {
+    try {
+        if (!chatId) return false;
+        const payload = { updated_at: new Date().toISOString() };
+        if (title) payload.title = title;
+
+        const { error } = await supabaseClient
+            .from("chats")
+            .update(payload)
+            .eq("id", chatId);
+
+        if (error) {
+            console.warn("[VGRO SUPABASE] Gagal update chat:", error);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.warn("[VGRO SUPABASE] Update chat error:", error);
+        return false;
+    }
+}
+
+// ============================================================
 // CHAT STATE
 // ============================================================
 
@@ -49,6 +201,15 @@ document.addEventListener("DOMContentLoaded", () => {
     bindEvents();
     renderSidebarHistory();
     renderActiveChat();
+
+    // Phase 2: gunakan history Supabase jika user sudah login.
+    // Jika tidak tersedia, localStorage tetap dipakai.
+    loadChatsFromSupabase().then((loaded) => {
+        if (loaded) {
+            renderSidebarHistory();
+            renderActiveChat();
+        }
+    });
 
     document.addEventListener("vgro:languagechange", () => {
         renderSidebarHistory();
@@ -587,28 +748,20 @@ async function handleSend() {
         return;
     }
 
-    const input =
-        document.getElementById(
-            "chatInput"
-        );
+    const input = document.getElementById("chatInput");
 
     if (!input) {
-        console.error(
-            "[VGRO] chatInput tidak ditemukan."
-        );
-
+        console.error("[VGRO] chatInput tidak ditemukan.");
         return;
     }
 
-    const text =
-        input.value.trim();
+    const text = input.value.trim();
 
     if (!text) {
         return;
     }
 
-    let chat =
-        getActiveChat();
+    let chat = getActiveChat();
 
     if (!chat) {
         createNewChat(false);
@@ -621,16 +774,15 @@ async function handleSend() {
 
     isSending = true;
 
-    // Simpan pesan user
+    // Simpan pesan user ke state/localStorage seperti sebelumnya.
     chat.messages.push({
         role: "user",
         text: text
     });
 
-    // Buat judul chat otomatis
+    // Buat judul chat otomatis.
     if (!chat.title) {
-        chat.title =
-            deriveTitle(text);
+        chat.title = deriveTitle(text);
     }
 
     persistChats();
@@ -641,32 +793,42 @@ async function handleSend() {
     autoGrow(input);
     toggleSendButton();
 
-    const scroll =
-        document.getElementById(
-            "chatScroll"
-        );
+    const scroll = document.getElementById("chatScroll");
 
     if (scroll) {
-        scroll.appendChild(
-            buildTypingRow()
-        );
-
-        scroll.scrollTop =
-            scroll.scrollHeight;
+        scroll.appendChild(buildTypingRow());
+        scroll.scrollTop = scroll.scrollHeight;
     }
 
-    try {
-        const reply =
-            await sendMessage(
-                text,
-                chat.messages
-            );
+    // Supabase hanya tambahan. Backend Gemini tetap dipakai seperti sebelumnya.
+    let supabaseChatId = String(chat.id).startsWith("chat_") ? null : chat.id;
 
-        document
-            .getElementById(
-                "typingRow"
-            )
-            ?.remove();
+    try {
+        const session = await getSupabaseSession();
+
+        if (session?.user?.id && !supabaseChatId) {
+            const createdChat = await createSupabaseChat(chat.title);
+
+            if (createdChat?.id) {
+                supabaseChatId = createdChat.id;
+
+                delete state.chats[chat.id];
+                chat.id = supabaseChatId;
+                state.chats[supabaseChatId] = chat;
+                state.activeChatId = supabaseChatId;
+                persistChats();
+            }
+        }
+
+        if (supabaseChatId) {
+            await saveSupabaseMessage(supabaseChatId, "user", text);
+            await updateSupabaseChat(supabaseChatId, chat.title);
+        }
+
+        // BACKEND GEMINI - TETAP SAMA
+        const reply = await sendMessage(text, chat.messages);
+
+        document.getElementById("typingRow")?.remove();
 
         chat.messages.push({
             role: "vgro",
@@ -676,36 +838,27 @@ async function handleSend() {
         persistChats();
         renderActiveChat();
 
+        if (supabaseChatId) {
+            await saveSupabaseMessage(supabaseChatId, "vgro", reply);
+            await updateSupabaseChat(supabaseChatId);
+        }
     } catch (error) {
-        console.error(
-            "[VGRO SEND ERROR]",
-            error
-        );
+        console.error("[VGRO SEND ERROR]", error);
 
-        document
-            .getElementById(
-                "typingRow"
-            )
-            ?.remove();
+        document.getElementById("typingRow")?.remove();
 
         chat.messages.push({
             role: "vgro",
-            text:
-                getConnectionErrorMessage()
+            text: getConnectionErrorMessage()
         });
 
         persistChats();
         renderActiveChat();
-
     } finally {
         isSending = false;
-
         toggleSendButton();
 
-        const currentInput =
-            document.getElementById(
-                "chatInput"
-            );
+        const currentInput = document.getElementById("chatInput");
 
         if (currentInput) {
             currentInput.focus();
